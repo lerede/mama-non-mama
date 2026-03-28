@@ -1,30 +1,49 @@
 # M'ama Non M'ama 🌸
 
-A Flutter application that simulates the classic Italian **"m'ama non m'ama"** (loves me, loves me not) game.
+Un'applicazione Flutter che simula il classico gioco "m'ama non m'ama".
 
-## Come si gioca / How to play
+## Come funziona
 
-1. Press **Start** to begin the animation.
-2. Watch the flower petals fall one by one with a smooth animation.
-3. Each petal reveals **"M'ama..."** or **"Non m'ama..."** alternately.
-4. When the last petal falls, the final answer is revealed.
-5. Press **Riprova 🌸** to play again.
+1. L'app mostra un fiore con **13 petali**.
+2. Premi **START** per avviare l'animazione (e la musica di sottofondo, se disponibile).
+3. I petali cadono uno alla volta con un'animazione fluida (gravità + rotazione + dissolvenza).
+4. Per ogni petalo viene mostrato alternatamente **"M'AMA"** o **"NON M'AMA"**.
+5. Quando tutti i petali sono caduti, appare il risultato finale.
+6. Premi **Ricomincia** per giocare di nuovo.
 
-## Features
+## Getting Started
 
-- 🌼 Hand-drawn daisy flower painted with Flutter's `CustomPainter`
-- 🍃 Smooth petal-fall animations using `AnimationController` + `CurvedAnimation`
-- 🎵 Background music via `audioplayers` (place `assets/music/background.mp3`)
-- 📱 Runs on Android, iOS, and Web
+### Requisiti
 
-## Getting started
+- [Flutter SDK](https://flutter.dev/docs/get-started/install) ≥ 3.3.0
+- Dart ≥ 3.3.0
+
+### Installazione
 
 ```bash
 flutter pub get
 flutter run
 ```
 
-### Background music
+### Musica di sottofondo (opzionale)
 
-Place a royalty-free `.mp3` file at `assets/music/background.mp3`.
-If the file is absent the app works silently.
+Aggiungi un file MP3 royalty-free in `assets/audio/music.mp3`.  
+L'app funziona anche senza il file audio.
+
+## Struttura del progetto
+
+```
+lib/
+  main.dart          # App, GameScreen, FlowerPainter
+assets/
+  audio/
+    music.mp3        # (aggiungere manualmente)
+test/
+  widget_test.dart   # Widget test di base
+```
+
+## Dipendenze principali
+
+| Pacchetto | Versione | Scopo |
+|-----------|----------|-------|
+| [audioplayers](https://pub.dev/packages/audioplayers) | ^6.1.0 | Musica di sottofondo |

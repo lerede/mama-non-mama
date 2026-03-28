@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
 import 'dart:math' as math;
+
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/material.dart';
 
 void main() {
   runApp(const MamaNonMamaApp());
@@ -18,462 +19,417 @@ class MamaNonMamaApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.pink),
         useMaterial3: true,
       ),
-      home: const GamePage(),
+      home: const GameScreen(),
     );
   }
 }
 
-class GamePage extends StatefulWidget {
-  const GamePage({super.key});
+// ---------------------------------------------------------------------------
+// Data model
+// ---------------------------------------------------------------------------
 
-  @override
-  State<GamePage> createState() => _GamePageState();
+enum PetalState { attached, falling, fallen }
+
+class PetalInfo {
+  final double angle;
+  PetalState state;
+  double animValue;
+
+  PetalInfo(this.angle)
+      : state = PetalState.attached,
+        animValue = 0;
 }
 
-class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
-  static const int totalPetals = 11;
+// ---------------------------------------------------------------------------
+// Game screen
+// ---------------------------------------------------------------------------
 
-  late List<AnimationController> _petalControllers;
-  late List<Animation<double>> _petalFallAnimations;
-  late List<Animation<double>> _petalOpacityAnimations;
+class GameScreen extends StatefulWidget {
+  const GameScreen({super.key});
 
-  final List<bool> _petalRemoved = List.filled(totalPetals, false);
-  int _removedCount = 0;
+  @override
+  State<GameScreen> createState() => _GameScreenState();
+}
+
+class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
+  static const int _numPetals = 13;
+  static const Duration _fallDuration = Duration(milliseconds: 1400);
+  static const Duration _betweenDelay = Duration(milliseconds: 700);
+
+  late List<PetalInfo> _petals;
+  late List<AnimationController> _controllers;
+
+  int _pluckedCount = 0;
   bool _gameStarted = false;
-  bool _gameFinished = false;
-  bool _isAnimating = false;
-  String _currentMessage = '';
+  bool _gameOver = false;
+  String _currentWord = '';
 
-  final AudioPlayer _audioPlayer = AudioPlayer();
-
-  late AnimationController _messageController;
-  late Animation<double> _messageAnimation;
+  late AudioPlayer _audioPlayer;
 
   @override
   void initState() {
     super.initState();
-    _initAnimations();
+    _audioPlayer = AudioPlayer();
+    _initGame();
   }
 
-  void _initAnimations() {
-    _petalControllers = List.generate(totalPetals, (i) {
-      return AnimationController(
-        duration: const Duration(milliseconds: 900),
-        vsync: this,
-      );
-    });
+  void _initGame() {
+    _pluckedCount = 0;
+    _gameStarted = false;
+    _gameOver = false;
+    _currentWord = '';
 
-    _petalFallAnimations = _petalControllers.map((controller) {
-      return CurvedAnimation(
-        parent: controller,
-        curve: Curves.easeIn,
-      );
-    }).toList();
-
-    _petalOpacityAnimations = _petalControllers.map((controller) {
-      return Tween<double>(begin: 1.0, end: 0.0).animate(
-        CurvedAnimation(
-          parent: controller,
-          curve: const Interval(0.6, 1.0, curve: Curves.easeOut),
-        ),
-      );
-    }).toList();
-
-    _messageController = AnimationController(
-      duration: const Duration(milliseconds: 400),
-      vsync: this,
+    _petals = List.generate(
+      _numPetals,
+      (i) => PetalInfo(2 * math.pi * i / _numPetals - math.pi / 2),
     );
-    _messageAnimation = CurvedAnimation(
-      parent: _messageController,
-      curve: Curves.elasticOut,
-    );
-  }
 
-  Future<void> _startGame() async {
-    if (_gameStarted) return;
-    setState(() {
-      _gameStarted = true;
-      _isAnimating = true;
-      _currentMessage = "M'ama...";
-    });
-    _messageController.forward(from: 0);
-
-    try {
-      await _audioPlayer.setReleaseMode(ReleaseMode.loop);
-      await _audioPlayer.play(AssetSource('music/background.mp3'));
-    } catch (_) {
-      // Continue without music if asset is unavailable
-    }
-
-    _removePetalSequentially(0);
-  }
-
-  void _removePetalSequentially(int index) async {
-    if (!mounted) return;
-
-    if (index >= totalPetals) {
-      final bool loves = (_removedCount % 2 == 1);
-      setState(() {
-        _gameFinished = true;
-        _isAnimating = false;
-        _currentMessage = loves ? "M'ama! ❤️" : "Non m'ama... 💔";
+    _controllers = List.generate(_numPetals, (i) {
+      final c = AnimationController(duration: _fallDuration, vsync: this);
+      c.addListener(() {
+        if (_petals[i].state == PetalState.falling) {
+          setState(() => _petals[i].animValue = c.value);
+        }
       });
-      _messageController.forward(from: 0);
-      await _audioPlayer.stop();
-      return;
-    }
-
-    await Future.delayed(const Duration(milliseconds: 700));
-    if (!mounted) return;
-
-    await _petalControllers[index].forward();
-
-    if (!mounted) return;
-    setState(() {
-      _petalRemoved[index] = true;
-      _removedCount++;
-      final bool loves = (_removedCount % 2 == 1);
-      _currentMessage = loves ? "M'ama..." : "Non m'ama...";
-    });
-    _messageController.forward(from: 0);
-    _removePetalSequentially(index + 1);
-  }
-
-  Future<void> _resetGame() async {
-    await _audioPlayer.stop();
-    for (var controller in _petalControllers) {
-      controller.reset();
-    }
-    _messageController.reset();
-    setState(() {
-      for (int i = 0; i < totalPetals; i++) {
-        _petalRemoved[i] = false;
-      }
-      _removedCount = 0;
-      _gameStarted = false;
-      _gameFinished = false;
-      _isAnimating = false;
-      _currentMessage = '';
+      return c;
     });
   }
 
   @override
   void dispose() {
-    for (var controller in _petalControllers) {
-      controller.dispose();
+    for (final c in _controllers) {
+      c.dispose();
     }
-    _messageController.dispose();
     _audioPlayer.dispose();
     super.dispose();
   }
 
+  Future<void> _startGame() async {
+    setState(() => _gameStarted = true);
+
+    // Start background music (gracefully skip if asset is missing)
+    try {
+      await _audioPlayer.setReleaseMode(ReleaseMode.loop);
+      await _audioPlayer.play(AssetSource('audio/music.mp3'));
+    } catch (_) {
+      // Music file not available – continue without sound
+    }
+
+    _pluckNext();
+  }
+
+  void _pluckNext() {
+    if (_pluckedCount >= _numPetals) {
+      _endGame();
+      return;
+    }
+
+    final idx = _pluckedCount;
+    final label = _pluckedCount.isEven ? "M'AMA" : "NON M'AMA";
+
+    setState(() {
+      _petals[idx].state = PetalState.falling;
+      _currentWord = label;
+      _pluckedCount++;
+    });
+
+    _controllers[idx].forward().then((_) {
+      setState(() => _petals[idx].state = PetalState.fallen);
+      Future.delayed(_betweenDelay, () {
+        if (mounted) _pluckNext();
+      });
+    });
+  }
+
+  Future<void> _endGame() async {
+    await _audioPlayer.stop();
+    // Last petal index is _numPetals - 1; determine result
+    final lastLabel = (_numPetals - 1).isEven ? "M'AMA! ❤️" : "NON M'AMA 💔";
+    setState(() {
+      _gameOver = true;
+      _currentWord = lastLabel;
+    });
+  }
+
+  Future<void> _restart() async {
+    for (final c in _controllers) {
+      c.dispose();
+    }
+    await _audioPlayer.stop();
+    setState(_initGame);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Build
+  // ---------------------------------------------------------------------------
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFF5F8),
+      backgroundColor: const Color(0xFFFFF0F5),
       body: SafeArea(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const SizedBox(height: 20),
+            const SizedBox(height: 28),
+            // Title
             Text(
               "M'ama Non M'ama",
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: Colors.pink[700],
-                letterSpacing: 1.2,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    color: Colors.pink[700],
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
+                  ),
+            ),
+            const SizedBox(height: 20),
+            // Current word label
+            SizedBox(
+              height: 52,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 350),
+                transitionBuilder: (child, anim) =>
+                    FadeTransition(opacity: anim, child: child),
+                child: Text(
+                  _currentWord,
+                  key: ValueKey(_currentWord),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        color: _currentWord.contains('NON')
+                            ? Colors.red[600]
+                            : Colors.green[700],
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
               ),
             ),
-            const SizedBox(height: 10),
+            // Flower
             Expanded(
               child: Center(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final size = math.min(constraints.maxWidth, constraints.maxHeight) * 0.85;
+                    final side = constraints.maxWidth.clamp(200.0, 340.0);
                     return AnimatedBuilder(
-                      animation: Listenable.merge(_petalControllers),
-                      builder: (context, child) {
-                        return CustomPaint(
-                          painter: FlowerPainter(
-                            totalPetals: totalPetals,
-                            petalFallAnimations: _petalFallAnimations,
-                            petalOpacityAnimations: _petalOpacityAnimations,
-                            petalRemoved: _petalRemoved,
-                          ),
-                          size: Size(size, size),
-                        );
-                      },
+                      animation: Listenable.merge(_controllers),
+                      builder: (context, _) => CustomPaint(
+                        size: Size(side, side * 1.35),
+                        painter: FlowerPainter(petals: _petals),
+                      ),
                     );
                   },
                 ),
               ),
             ),
-            SizedBox(
-              height: 70,
-              child: AnimatedBuilder(
-                animation: _messageAnimation,
-                builder: (context, child) {
-                  return Transform.scale(
-                    scale: 0.8 + _messageAnimation.value * 0.2,
-                    child: Opacity(
-                      opacity: _currentMessage.isNotEmpty ? 1.0 : 0.0,
-                      child: Text(
-                        _currentMessage,
-                        style: TextStyle(
-                          fontSize: 30,
-                          fontWeight: FontWeight.bold,
-                          color: _currentMessage.contains('Non')
-                              ? Colors.grey[600]
-                              : Colors.pink[600],
-                        ),
-                      ),
-                    ),
-                  );
-                },
+            // Buttons
+            Padding(
+              padding: const EdgeInsets.only(bottom: 36),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!_gameStarted) _buildButton('START 🌸', _startGame),
+                  if (_gameOver) _buildButton('Ricomincia 🌸', _restart),
+                ],
               ),
             ),
-            const SizedBox(height: 20),
-            if (!_gameStarted)
-              ElevatedButton(
-                onPressed: _startGame,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.pink[400],
-                  foregroundColor: Colors.white,
-                  elevation: 4,
-                  padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(32),
-                  ),
-                ),
-                child: const Text(
-                  'Start',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                ),
-              ),
-            if (_gameFinished)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: OutlinedButton(
-                  onPressed: _resetGame,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.pink[400],
-                    side: BorderSide(color: Colors.pink[300]!, width: 2),
-                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(32),
-                    ),
-                  ),
-                  child: const Text(
-                    'Riprova 🌸',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-            const SizedBox(height: 30),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildButton(String label, VoidCallback onPressed) {
+    return ElevatedButton(
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.pink[500],
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 52, vertical: 16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
+        elevation: 5,
+        shadowColor: Colors.pink[200],
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 1.1,
         ),
       ),
     );
   }
 }
 
-/// Draws a daisy flower with petals that animate away one by one.
-class FlowerPainter extends CustomPainter {
-  final int totalPetals;
-  final List<Animation<double>> petalFallAnimations;
-  final List<Animation<double>> petalOpacityAnimations;
-  final List<bool> petalRemoved;
+// ---------------------------------------------------------------------------
+// Custom painter – draws flower + animated falling petals on one canvas
+// ---------------------------------------------------------------------------
 
-  FlowerPainter({
-    required this.totalPetals,
-    required this.petalFallAnimations,
-    required this.petalOpacityAnimations,
-    required this.petalRemoved,
-  });
+class FlowerPainter extends CustomPainter {
+  final List<PetalInfo> petals;
+
+  const FlowerPainter({required this.petals});
+
+  static const double _petalLen = 52;
+  static const double _petalW = 22;
+  static const double _centerR = 26;
+  static const double _petalDist = 32; // gap between center edge and petal
+  static const Color _petalColor = Color(0xFFF48FB1); // pink[300]
+  static const double _fadeStartThreshold = 0.55;
+  static const double _fadeDurationFraction = 0.45;
+  static const int _centerDotCount = 7;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width * 0.32;
-    final petalLength = radius * 0.70;
-    final petalWidth = petalLength * 0.42;
+    final cx = size.width / 2;
+    final cy = size.height * 0.40;
+    final center = Offset(cx, cy);
 
-    // Draw stem
-    _drawStem(canvas, center, size, radius);
-
-    // Draw petals
-    for (int i = 0; i < totalPetals; i++) {
-      if (petalRemoved[i]) continue;
-      _drawPetal(canvas, center, radius, petalLength, petalWidth, i);
-    }
-
-    // Draw flower center
-    _drawCenter(canvas, center, radius);
+    _drawStem(canvas, center, size);
+    _drawLeaf(canvas, center, size);
+    _drawAttachedPetals(canvas, center);
+    _drawFallingPetals(canvas, center, size);
+    _drawCenter(canvas, center);
   }
 
-  void _drawStem(Canvas canvas, Offset center, Size size, double radius) {
-    final stemPaint = Paint()
-      ..color = const Color(0xFF4CAF50)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 7
-      ..strokeCap = StrokeCap.round;
+  // ---- stem ----------------------------------------------------------------
 
-    final stemPath = Path();
-    final stemTop = center.dy + radius * 0.28;
-    final stemBottom = size.height * 0.92;
-    stemPath.moveTo(center.dx, stemTop);
-    stemPath.cubicTo(
-      center.dx + 18, stemTop + (stemBottom - stemTop) * 0.33,
-      center.dx - 18, stemTop + (stemBottom - stemTop) * 0.66,
-      center.dx, stemBottom,
+  void _drawStem(Canvas canvas, Offset center, Size size) {
+    canvas.drawLine(
+      center + Offset(0, _centerR - 2),
+      center + Offset(0, _centerR + size.height * 0.30),
+      Paint()
+        ..color = const Color(0xFF388E3C)
+        ..strokeWidth = 7
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round,
     );
-    canvas.drawPath(stemPath, stemPaint);
-
-    // Left leaf
-    final leafPaint = Paint()
-      ..color = const Color(0xFF66BB6A)
-      ..style = PaintingStyle.fill;
-
-    final leafY = stemTop + (stemBottom - stemTop) * 0.38;
-    final leftLeaf = Path();
-    leftLeaf.moveTo(center.dx - 5, leafY);
-    leftLeaf.quadraticBezierTo(center.dx - 50, leafY - 22, center.dx - 55, leafY + 15);
-    leftLeaf.quadraticBezierTo(center.dx - 25, leafY + 8, center.dx - 5, leafY);
-    canvas.drawPath(leftLeaf, leafPaint);
-
-    // Right leaf
-    final rightLeaf = Path();
-    rightLeaf.moveTo(center.dx + 5, leafY + 20);
-    rightLeaf.quadraticBezierTo(center.dx + 52, leafY - 2, center.dx + 50, leafY + 30);
-    rightLeaf.quadraticBezierTo(center.dx + 22, leafY + 24, center.dx + 5, leafY + 20);
-    canvas.drawPath(rightLeaf, leafPaint);
   }
 
-  void _drawPetal(
-    Canvas canvas,
-    Offset center,
-    double radius,
-    double petalLength,
-    double petalWidth,
-    int index,
-  ) {
-    final angle = (2 * math.pi / totalPetals) * index - math.pi / 2;
-    final fall = petalFallAnimations[index].value;
-    final opacity = petalOpacityAnimations[index].value;
+  // ---- leaf ----------------------------------------------------------------
 
-    // Petal detaches from flower, rotates and drifts to a side
-    final sideDir = (index % 2 == 0) ? 1.0 : -1.0;
-    final fallX = sideDir * fall * radius * 0.8 * math.sin(fall * math.pi);
-    final fallY = fall * radius * 2.0;
-    final spin = fall * math.pi * 1.5 * sideDir;
+  void _drawLeaf(Canvas canvas, Offset center, Size size) {
+    final base = center + Offset(0, _centerR + size.height * 0.14);
+    final path = Path()
+      ..moveTo(base.dx, base.dy)
+      ..quadraticBezierTo(
+          base.dx + 32, base.dy - 22, base.dx + 40, base.dy + 6)
+      ..quadraticBezierTo(
+          base.dx + 12, base.dy + 10, base.dx, base.dy);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = const Color(0xFF66BB6A)
+        ..style = PaintingStyle.fill,
+    );
+  }
+
+  // ---- attached petals -----------------------------------------------------
+
+  void _drawAttachedPetal(Canvas canvas, Offset center, double angle) {
+    final petalPaint = Paint()
+      ..color = _petalColor
+      ..style = PaintingStyle.fill;
+    final veinPaint = Paint()
+      ..color = const Color(0xFFFCE4EC) // pink[50]
+      ..strokeWidth = 1.3
+      ..style = PaintingStyle.stroke;
 
     canvas.save();
-    canvas.translate(center.dx + fallX, center.dy + fallY);
-    canvas.rotate(angle + spin);
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(angle);
 
-    // Petal shadow
-    final shadowPaint = Paint()
-      ..color = Colors.pink.withOpacity(0.10 * opacity)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(2, -radius * 0.78 + 4),
-        width: petalWidth,
-        height: petalLength,
-      ),
-      shadowPaint,
+    final rect = Rect.fromCenter(
+      center: Offset(0, -(_petalDist + _centerR + _petalLen / 2)),
+      width: _petalW,
+      height: _petalLen,
     );
-
-    // Gradient-like petal fill (simulated with two overlapping ovals)
-    final petalPaintBase = Paint()
-      ..color = const Color(0xFFFFC1CC).withOpacity(opacity)
-      ..style = PaintingStyle.fill;
-    final petalPaintHighlight = Paint()
-      ..color = const Color(0xFFFFE4EC).withOpacity(opacity * 0.7)
-      ..style = PaintingStyle.fill;
-
-    final petalRect = Rect.fromCenter(
-      center: Offset(0, -radius * 0.78),
-      width: petalWidth,
-      height: petalLength,
+    canvas.drawOval(rect, petalPaint);
+    canvas.drawLine(
+      Offset(0, -(_petalDist + _centerR)),
+      Offset(0, -(_petalDist + _centerR + _petalLen)),
+      veinPaint,
     );
-
-    canvas.drawOval(petalRect, petalPaintBase);
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(-petalWidth * 0.1, -radius * 0.78 - petalLength * 0.05),
-        width: petalWidth * 0.55,
-        height: petalLength * 0.7,
-      ),
-      petalPaintHighlight,
-    );
-
-    // Petal outline
-    final outlinePaint = Paint()
-      ..color = Colors.pink[200]!.withOpacity(opacity * 0.6)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-    canvas.drawOval(petalRect, outlinePaint);
-
-    // Midrib line
-    final midribPaint = Paint()
-      ..color = Colors.pink[300]!.withOpacity(opacity * 0.4)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.8;
-    final midrib = Path();
-    midrib.moveTo(0, -radius * 0.42);
-    midrib.lineTo(0, -radius * 0.78 - petalLength * 0.42);
-    canvas.drawPath(midrib, midribPaint);
-
     canvas.restore();
   }
 
-  void _drawCenter(Canvas canvas, Offset center, double radius) {
-    final centerRadius = radius * 0.26;
+  void _drawAttachedPetals(Canvas canvas, Offset center) {
+    for (final p in petals) {
+      if (p.state == PetalState.attached) {
+        _drawAttachedPetal(canvas, center, p.angle);
+      }
+    }
+  }
 
-    // Outer glow
-    final glowPaint = Paint()
-      ..color = Colors.orange.withOpacity(0.20)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-    canvas.drawCircle(center, centerRadius + 4, glowPaint);
+  // ---- falling petals ------------------------------------------------------
 
-    // Main disk
-    final diskPaint = Paint()
-      ..color = const Color(0xFFFFCA28)
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(center, centerRadius, diskPaint);
+  void _drawFallingPetals(Canvas canvas, Offset center, Size size) {
+    for (final p in petals) {
+      if (p.state != PetalState.falling) continue;
 
-    // Inner ring
-    final innerRingPaint = Paint()
-      ..color = const Color(0xFFFFA000)
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(center, centerRadius * 0.72, innerRingPaint);
+      final t = p.animValue;
+      // Start at petal's position on the flower
+      final startX = center.dx +
+          math.cos(p.angle) * (_petalDist + _centerR + _petalLen / 2);
+      final startY = center.dy +
+          math.sin(p.angle) * (_petalDist + _centerR + _petalLen / 2);
 
-    // Seed dots
+      // Gravity drop + slight lateral drift
+      final px = startX + math.sin(p.angle) * 55 * t;
+      final py = startY + size.height * 0.55 * t * t;
+
+      final rotation = p.angle + 3.5 * math.pi * t;
+      final opacity = t < _fadeStartThreshold
+          ? 1.0
+          : ((1.0 - t) / _fadeDurationFraction).clamp(0.0, 1.0);
+
+      canvas.save();
+      canvas.translate(px, py);
+      canvas.rotate(rotation);
+      canvas.drawOval(
+        Rect.fromCenter(
+            center: Offset.zero, width: _petalW, height: _petalLen),
+        Paint()
+          ..color = _petalColor.withOpacity(opacity)
+          ..style = PaintingStyle.fill,
+      );
+      canvas.restore();
+    }
+  }
+
+  // ---- flower center -------------------------------------------------------
+
+  void _drawCenter(Canvas canvas, Offset center) {
+    // Yellow fill
+    canvas.drawCircle(
+      center,
+      _centerR,
+      Paint()
+        ..color = const Color(0xFFFFD600)
+        ..style = PaintingStyle.fill,
+    );
+    // Orange border
+    canvas.drawCircle(
+      center,
+      _centerR,
+      Paint()
+        ..color = const Color(0xFFF57F17)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.2,
+    );
+    // Small decorative dots
     final dotPaint = Paint()
-      ..color = const Color(0xFF5D4037)
+      ..color = const Color(0xFFE65100)
       ..style = PaintingStyle.fill;
-    // Fixed seed produces stable dot positions across repaints.
-    final rng = math.Random(99);
-    for (int i = 0; i < 22; i++) {
-      final dotAngle = rng.nextDouble() * 2 * math.pi;
-      final dotR = rng.nextDouble() * centerRadius * 0.62;
+    for (int i = 0; i < _centerDotCount; i++) {
+      final a = 2 * math.pi * i / _centerDotCount;
       canvas.drawCircle(
-        Offset(center.dx + dotR * math.cos(dotAngle), center.dy + dotR * math.sin(dotAngle)),
-        1.6,
+        center + Offset(math.cos(a) * 14, math.sin(a) * 14),
+        2.8,
         dotPaint,
       );
     }
-
-    // Disk outline
-    final outlinePaint = Paint()
-      ..color = const Color(0xFFE65100).withOpacity(0.4)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-    canvas.drawCircle(center, centerRadius, outlinePaint);
+    canvas.drawCircle(center, 3, dotPaint);
   }
 
   @override
-  bool shouldRepaint(FlowerPainter oldDelegate) => true;
+  bool shouldRepaint(FlowerPainter old) => true;
 }

@@ -8,6 +8,7 @@
 .buildlog/
 .history
 .svn/
+.swp
 migrate_working_dir/
 
 # IntelliJ related
@@ -16,8 +17,10 @@ migrate_working_dir/
 *.iws
 .idea/
 
-# VSCode related
-.vscode/
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this is not
+# included by default. Uncomment this to exclude it.
+# .vscode/
 
 # Flutter/Dart/Pub related
 **/doc/api/
@@ -40,5 +43,14 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Local properties (contains SDK paths — do not commit)
-**/local.properties
+# Gradle
+android/.gradle/
+android/captures/
+android/local.properties
+
+# iOS
+ios/.symlinks/
+ios/Flutter/
+ios/Pods/
+ios/Runner.xcworkspace/
+ios/Podfile.lock

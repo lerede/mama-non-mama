@@ -1,24 +1,24 @@
 name: mama_non_mama
-description: A Flutter app simulating the "M'ama Non M'ama" (loves me, loves me not) game.
+description: Il gioco m'ama non m'ama - sfoglia il fiore e scopri se ti ama!
 publish_to: 'none'
 
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: '>=3.3.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
-  audioplayers: ^6.0.0
+  audioplayers: ^6.1.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.0
+  flutter_lints: ^4.0.0
 
 flutter:
   uses-material-design: true
 
   assets:
-    - assets/music/
+    - assets/audio/
