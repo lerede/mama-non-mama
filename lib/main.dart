@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 
 void main() {
@@ -32,12 +31,26 @@ enum PetalState { attached, falling, fallen }
 
 class PetalInfo {
   final double angle;
+  final double windAmplitude;
+  final double windFrequency;
+  final double windPhase;
+  final double windDrift;
   PetalState state;
   double animValue;
+  double? fallenX; // Posizione X quando è caduto
+  double? fallenY; // Posizione Y quando è caduto
 
-  PetalInfo(this.angle)
+  PetalInfo(
+    this.angle, {
+    required this.windAmplitude,
+    required this.windFrequency,
+    required this.windPhase,
+    required this.windDrift,
+  })
       : state = PetalState.attached,
-        animValue = 0;
+        animValue = 0,
+        fallenX = null,
+        fallenY = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -52,10 +65,12 @@ class GameScreen extends StatefulWidget {
 }
 
 class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
-  static const int _numPetals = 13;
-  static const Duration _fallDuration = Duration(milliseconds: 1400);
-  static const Duration _betweenDelay = Duration(milliseconds: 700);
+  static const int _minPetals = 9;
+  static const int _maxPetals = 21;
+  static const Duration _fallDuration = Duration(milliseconds: 4500);
+  static const Duration _betweenDelay = Duration(milliseconds: 650);
 
+  late int _numPetals;
   late List<PetalInfo> _petals;
   late List<AnimationController> _controllers;
 
@@ -63,29 +78,51 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   bool _gameStarted = false;
   bool _gameOver = false;
   String _currentWord = '';
-
-  late AudioPlayer _audioPlayer;
+  final math.Random _random = math.Random();
 
   @override
   void initState() {
     super.initState();
-    _audioPlayer = AudioPlayer();
     _initGame();
   }
 
+  int _pickPetalCount() {
+    final choices = (_maxPetals - _minPetals) + 1;
+    return _minPetals + _random.nextInt(choices);
+  }
+
   void _initGame() {
+    _numPetals = _pickPetalCount();
     _pluckedCount = 0;
     _gameStarted = false;
     _gameOver = false;
     _currentWord = '';
 
+    const baseAmplitude = 18.0;
+    const amplitudeJitter = 3.0;
+    const baseFrequency = 2.2;
+    const frequencyJitter = 0.35;
+    const baseDrift = 22.0;
+    const driftJitter = 5.0;
+
     _petals = List.generate(
       _numPetals,
-      (i) => PetalInfo(2 * math.pi * i / _numPetals - math.pi / 2),
+      (i) => PetalInfo(
+        2 * math.pi * i / _numPetals - math.pi / 2,
+        windAmplitude:
+            baseAmplitude + (_random.nextDouble() * 2 - 1) * amplitudeJitter,
+        windFrequency:
+            baseFrequency + (_random.nextDouble() * 2 - 1) * frequencyJitter,
+        windPhase: _random.nextDouble() * 2 * math.pi,
+        windDrift: baseDrift + (_random.nextDouble() * 2 - 1) * driftJitter,
+      ),
     );
 
     _controllers = List.generate(_numPetals, (i) {
-      final c = AnimationController(duration: _fallDuration, vsync: this);
+      final c = AnimationController(
+        duration: _fallDuration,
+        vsync: this,
+      );
       c.addListener(() {
         if (_petals[i].state == PetalState.falling) {
           setState(() => _petals[i].animValue = c.value);
@@ -100,21 +137,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     for (final c in _controllers) {
       c.dispose();
     }
-    _audioPlayer.dispose();
     super.dispose();
   }
 
-  Future<void> _startGame() async {
+  void _startGame() {
     setState(() => _gameStarted = true);
-
-    // Start background music (gracefully skip if asset is missing)
-    try {
-      await _audioPlayer.setReleaseMode(ReleaseMode.loop);
-      await _audioPlayer.play(AssetSource('audio/music.mp3'));
-    } catch (_) {
-      // Music file not available – continue without sound
-    }
-
     _pluckNext();
   }
 
@@ -133,17 +160,18 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _pluckedCount++;
     });
 
+    // Start the next petal shortly after this one detaches from the center.
+    Future.delayed(_betweenDelay, () {
+      if (mounted) _pluckNext();
+    });
+
     _controllers[idx].forward().then((_) {
+      if (!mounted) return;
       setState(() => _petals[idx].state = PetalState.fallen);
-      Future.delayed(_betweenDelay, () {
-        if (mounted) _pluckNext();
-      });
     });
   }
 
-  Future<void> _endGame() async {
-    await _audioPlayer.stop();
-    // Last petal index is _numPetals - 1; determine result
+  void _endGame() {
     final lastLabel = (_numPetals - 1).isEven ? "M'AMA! ❤️" : "NON M'AMA 💔";
     setState(() {
       _gameOver = true;
@@ -151,11 +179,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     });
   }
 
-  Future<void> _restart() async {
+  void _restart() {
     for (final c in _controllers) {
       c.dispose();
     }
-    await _audioPlayer.stop();
     setState(_initGame);
   }
 
@@ -186,9 +213,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             SizedBox(
               height: 52,
               child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 350),
-                transitionBuilder: (child, anim) =>
-                    FadeTransition(opacity: anim, child: child),
+                duration: const Duration(milliseconds: 600),
+                transitionBuilder: (child, anim) => FadeTransition(
+                  opacity: anim,
+                  child: ScaleTransition(scale: anim, child: child),
+                ),
                 child: Text(
                   _currentWord,
                   key: ValueKey(_currentWord),
@@ -225,8 +254,16 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (!_gameStarted) _buildButton('START 🌸', _startGame),
-                  if (_gameOver) _buildButton('Ricomincia 🌸', _restart),
+                  Visibility(
+                    visible: !_gameStarted || _gameOver,
+                    maintainSize: true,
+                    maintainAnimation: true,
+                    maintainState: true,
+                    child: _buildButton(
+                      _gameOver ? 'Ricomincia 🌸' : 'INIZIA 🌸',
+                      _gameOver ? _restart : _startGame,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -271,8 +308,9 @@ class FlowerPainter extends CustomPainter {
   static const double _petalLen = 52;
   static const double _petalW = 22;
   static const double _centerR = 26;
-  static const double _petalDist = 32; // gap between center edge and petal
-  static const Color _petalColor = Color(0xFFF48FB1); // pink[300]
+  static const double _petalDist = 8; // gap between center edge and petal
+  static const Color _petalColor = Color(0xFFFFFFFF); // white (daisy petals)
+  static const Color _centerColor = Color(0xFFFFD700); // golden yellow
   static const double _fadeStartThreshold = 0.55;
   static const double _fadeDurationFraction = 0.45;
   static const int _centerDotCount = 7;
@@ -287,6 +325,7 @@ class FlowerPainter extends CustomPainter {
     _drawLeaf(canvas, center, size);
     _drawAttachedPetals(canvas, center);
     _drawFallingPetals(canvas, center, size);
+    _drawFallenPetals(canvas, size);
     _drawCenter(canvas, center);
   }
 
@@ -328,8 +367,12 @@ class FlowerPainter extends CustomPainter {
     final petalPaint = Paint()
       ..color = _petalColor
       ..style = PaintingStyle.fill;
+    final petalBorderPaint = Paint()
+      ..color = const Color(0xFFE0E0E0) // light gray border for daisy petal
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
     final veinPaint = Paint()
-      ..color = const Color(0xFFFCE4EC) // pink[50]
+      ..color = const Color(0xFFF0F0F0) // light gray vein
       ..strokeWidth = 1.3
       ..style = PaintingStyle.stroke;
 
@@ -343,6 +386,7 @@ class FlowerPainter extends CustomPainter {
       height: _petalLen,
     );
     canvas.drawOval(rect, petalPaint);
+    canvas.drawOval(rect, petalBorderPaint);
     canvas.drawLine(
       Offset(0, -(_petalDist + _centerR)),
       Offset(0, -(_petalDist + _centerR + _petalLen)),
@@ -362,34 +406,105 @@ class FlowerPainter extends CustomPainter {
   // ---- falling petals ------------------------------------------------------
 
   void _drawFallingPetals(Canvas canvas, Offset center, Size size) {
+    final petalPaint = Paint()
+      ..color = _petalColor
+      ..style = PaintingStyle.fill;
+    final petalBorderPaint = Paint()
+      ..color = const Color(0xFFE0E0E0)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+    final veinPaint = Paint()
+      ..color = const Color(0xFFF0F0F0)
+      ..strokeWidth = 1.3
+      ..style = PaintingStyle.stroke;
+
     for (final p in petals) {
       if (p.state != PetalState.falling) continue;
 
-      final t = p.animValue;
-      // Start at petal's position on the flower
+      final rawT = p.animValue;
+      final t = Curves.easeIn.transform(rawT);
+
+      // Start exactly from the attached petal position on the flower.
       final startX = center.dx +
-          math.cos(p.angle) * (_petalDist + _centerR + _petalLen / 2);
-      final startY = center.dy +
           math.sin(p.angle) * (_petalDist + _centerR + _petalLen / 2);
+      final startY = center.dy -
+          math.cos(p.angle) * (_petalDist + _centerR + _petalLen / 2);
 
-      // Gravity drop + slight lateral drift
-      final px = startX + math.sin(p.angle) * 55 * t;
-      final py = startY + size.height * 0.55 * t * t;
+      final bottomY = size.height - 30.0;
 
-      final rotation = p.angle + 3.5 * math.pi * t;
-      final opacity = t < _fadeStartThreshold
-          ? 1.0
-          : ((1.0 - t) / _fadeDurationFraction).clamp(0.0, 1.0);
+      // Each petal has its own wind profile.
+      final windAmplitude = p.windAmplitude * (0.55 + 0.45 * rawT);
+      final windWave =
+          math.sin((rawT * 2 * math.pi * p.windFrequency) + p.windPhase);
+      final horizontalDrift = p.windDrift * rawT;
+      final px = startX + (windWave * windAmplitude) + horizontalDrift;
+      final py = startY + (bottomY - startY) * t;
+
+      // Save final position only when the animation completes.
+      if (p.fallenX == null && rawT >= 0.999) {
+        p.fallenX = px;
+        p.fallenY = bottomY;
+      }
+
+      // Clamp keeps petals visible at the bottom edge.
+      final drawY = py.clamp(0.0, bottomY);
+
+      final rotation = p.angle + 2.2 * math.pi * rawT;
+
+      canvas.save();
+      canvas.translate(px, drawY);
+      canvas.rotate(rotation);
+      final rect = Rect.fromCenter(
+        center: Offset.zero,
+        width: _petalW,
+        height: _petalLen,
+      );
+      canvas.drawOval(rect, petalPaint);
+      canvas.drawOval(rect, petalBorderPaint);
+      canvas.drawLine(
+        Offset(0, -_petalLen / 2),
+        Offset(0, _petalLen / 2),
+        veinPaint,
+      );
+      canvas.restore();
+    }
+  }
+
+  // ---- fallen petals (accumulate at bottom) --------------------------------
+
+  void _drawFallenPetals(Canvas canvas, Size size) {
+    final petalPaint = Paint()
+      ..color = _petalColor
+      ..style = PaintingStyle.fill;
+    final petalBorderPaint = Paint()
+      ..color = const Color(0xFFE0E0E0)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+    final veinPaint = Paint()
+      ..color = const Color(0xFFF0F0F0)
+      ..strokeWidth = 1.3
+      ..style = PaintingStyle.stroke;
+
+    for (final p in petals) {
+      if (p.state != PetalState.fallen || p.fallenX == null) continue;
+
+      final px = p.fallenX!;
+      final py = p.fallenY ?? (size.height - 30);
 
       canvas.save();
       canvas.translate(px, py);
-      canvas.rotate(rotation);
-      canvas.drawOval(
-        Rect.fromCenter(
-            center: Offset.zero, width: _petalW, height: _petalLen),
-        Paint()
-          ..color = _petalColor.withOpacity(opacity)
-          ..style = PaintingStyle.fill,
+      canvas.rotate(p.angle);
+      final rect = Rect.fromCenter(
+        center: Offset.zero,
+        width: _petalW,
+        height: _petalLen,
+      );
+      canvas.drawOval(rect, petalPaint);
+      canvas.drawOval(rect, petalBorderPaint);
+      canvas.drawLine(
+        Offset(0, -_petalLen / 2),
+        Offset(0, _petalLen / 2),
+        veinPaint,
       );
       canvas.restore();
     }

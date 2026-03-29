@@ -54,3 +54,4 @@ ios/Flutter/
 ios/Pods/
 ios/Runner.xcworkspace/
 ios/Podfile.lock
+/.vs
