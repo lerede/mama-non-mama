@@ -14,14 +14,20 @@ void main() {
       (WidgetTester tester) async {
     await tester.pumpWidget(const MamaNonMamaApp());
 
-    expect(find.text('START 🌸'), findsOneWidget);
+    expect(find.text('INIZIA 🌸'), findsOneWidget);
   });
 
   testWidgets('FlowerPainter renders without throwing',
       (WidgetTester tester) async {
     final petals = List.generate(
       13,
-      (i) => PetalInfo(2 * 3.14159 * i / 13),
+      (i) => PetalInfo(
+        2 * 3.14159 * i / 13,
+        windAmplitude: 18,
+        windFrequency: 2.2,
+        windPhase: 0,
+        windDrift: 22,
+      ),
     );
 
     await tester.pumpWidget(

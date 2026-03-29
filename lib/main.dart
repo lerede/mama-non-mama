@@ -310,7 +310,7 @@ class FlowerPainter extends CustomPainter {
   static const double _centerR = 26;
   static const double _petalDist = 8; // gap between center edge and petal
   static const Color _petalColor = Color(0xFFFFFFFF); // white (daisy petals)
-  static const Color _centerColor = Color(0xFFFFD700); // golden yellow
+  static const Color _centerColor = Color(0xFFFFD600); // golden yellow
   static const double _fadeStartThreshold = 0.55;
   static const double _fadeDurationFraction = 0.45;
   static const int _centerDotCount = 7;
@@ -433,7 +433,8 @@ class FlowerPainter extends CustomPainter {
       final bottomY = size.height - 30.0;
 
       // Each petal has its own wind profile.
-      final windAmplitude = p.windAmplitude * (0.55 + 0.45 * rawT);
+      final windAmplitude = p.windAmplitude *
+          (_fadeStartThreshold + _fadeDurationFraction * rawT);
       final windWave =
           math.sin((rawT * 2 * math.pi * p.windFrequency) + p.windPhase);
       final horizontalDrift = p.windDrift * rawT;
@@ -518,7 +519,7 @@ class FlowerPainter extends CustomPainter {
       center,
       _centerR,
       Paint()
-        ..color = const Color(0xFFFFD600)
+        ..color = _centerColor
         ..style = PaintingStyle.fill,
     );
     // Orange border
